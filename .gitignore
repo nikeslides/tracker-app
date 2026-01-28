@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+.env
+
+# Config (use config.example.toml as template)
+config.toml
+
+# Data directory (downloaded audio, generated JSON)
+data/
+
+# macOS
+.DS_Store
+
+# Container build artifacts
+*.tar
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

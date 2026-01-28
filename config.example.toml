@@ -1,0 +1,13 @@
+# Tracker Configuration
+# Copy this file to config.toml and modify as needed
+
+# Where to store downloaded audio files and data
+# Can be a relative path (from project root) or absolute path
+output_path = "./data"
+
+# Google Sheets link to the tracker spreadsheet
+sheet_link = "https://docs.google.com/spreadsheets/d/<sheet_id>/htmlview"
+
+# How often to auto-refresh the sheet (in seconds)
+# 3600 = 1 hour, 1800 = 30 minutes, 7200 = 2 hours
+refresh_interval = 3600
