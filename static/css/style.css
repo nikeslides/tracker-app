@@ -336,8 +336,9 @@ audio {
   top: 0;
   bottom: var(--player-height);
   width: var(--sidebar-width);
-  max-height: none;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   /* Square, flush edge like Spotify */
   border-left: none;
   border-top: none;
@@ -349,6 +350,7 @@ audio {
   gap: 6px;
   margin-bottom: 12px;
   padding: 0 24px;
+  flex-shrink: 0;
 }
 .sidebar-app-title {
   font-size: 18px;
@@ -365,6 +367,7 @@ audio {
 .sidebar-search {
   max-width: none;
   margin: 0 0 12px;
+  flex-shrink: 0;
 }
 .sidebar-title {
   font-size: 12px;
@@ -373,11 +376,15 @@ audio {
   color: #888;
   margin-bottom: 10px;
   padding: 0 24px;
+  flex-shrink: 0;
 }
 .sections-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 .sections-select {
   display: none;
