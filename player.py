@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Music player server for the Tracker sheet data.
-Serves a web interface to play tracks from pillows.su links.
+Serves a web interface to play tracks from pillows.su and files.yetracker.org links.
+Pillows files live in audio/; yetracker files in audio_yetracker/ (separate folder).
 """
 
 import hashlib
@@ -58,10 +59,12 @@ def login_required(f):
 
 # Configuration
 DATA_DIR = Path(config.output_path())
-AUDIO_DIR = DATA_DIR / "audio"
+AUDIO_DIR = DATA_DIR / "audio"  # pillows.su files (unchanged)
+AUDIO_YETRACKER_DIR = DATA_DIR / "audio_yetracker"  # files.yetracker.org files (separate)
 ARTWORK_DIR = DATA_DIR / "artwork"
 JSON_PATH = DATA_DIR / "sheet.json"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+AUDIO_YETRACKER_DIR.mkdir(parents=True, exist_ok=True)
 ARTWORK_DIR.mkdir(parents=True, exist_ok=True)
 
 # In-memory track cache
@@ -76,6 +79,14 @@ def extract_pillows_hash(link: str) -> Optional[str]:
     if not link:
         return None
     match = re.search(r"pillows\.su/f/([a-f0-9]+)", link, re.IGNORECASE)
+    return match.group(1) if match else None
+
+
+def extract_yetracker_id(link: str) -> Optional[str]:
+    """Extract file ID from files.yetracker.org link (e.g. f/5YWrQGTB)."""
+    if not link:
+        return None
+    match = re.search(r"files\.yetracker\.org/f/([a-zA-Z0-9]+)", link, re.IGNORECASE)
     return match.group(1) if match else None
 
 
@@ -146,9 +157,11 @@ def load_tracks() -> List[Dict]:
     for track in tracks:
         link = track.get("Link", "").strip()
         quality = track.get("Quality", "").strip()
-        
-        # Only include tracks with pillows.su links and quality != "Not Available"
-        if "pillows.su" in link.lower() and quality != "Not Available":
+        if quality == "Not Available":
+            continue
+
+        # Include tracks with pillows.su links (unchanged behavior)
+        if "pillows.su" in link.lower():
             hash_val = extract_pillows_hash(link)
             if hash_val:
                 track_id = generate_track_id(track)
@@ -161,6 +174,24 @@ def load_tracks() -> List[Dict]:
                     "available_length": track.get("Available Length", "").strip(),
                     "track_length": track.get("Track Length", "").strip(),
                     "hash": hash_val,
+                    "host": "pillows",
+                    "original_link": link,
+                })
+        # Include tracks with files.yetracker.org links (separate folder)
+        elif "files.yetracker.org" in link.lower():
+            file_id = extract_yetracker_id(link)
+            if file_id:
+                track_id = generate_track_id(track)
+                processed.append({
+                    "id": track_id,
+                    "name": track.get("Name", "").strip(),
+                    "era": track.get("Era", "").strip(),
+                    "notes": track.get("Notes", "").strip(),
+                    "quality": quality,
+                    "available_length": track.get("Available Length", "").strip(),
+                    "track_length": track.get("Track Length", "").strip(),
+                    "hash": file_id,  # reuse "hash" key for file id
+                    "host": "yetracker",
                     "original_link": link,
                 })
 
@@ -202,40 +233,55 @@ def get_audio_path(track_id: str) -> Path:
     track = get_track_index().get(track_id)
     if not track:
         return None
-    
-    hash_val = track["hash"]
-    hash_dir = AUDIO_DIR / hash_val
-    
-    # If hash directory exists, look for any audio file in it
-    if hash_dir.exists() and hash_dir.is_dir():
-        for file_path in hash_dir.iterdir():
+
+    file_id = track["hash"]
+    host = track.get("host", "pillows")
+
+    if host == "yetracker":
+        base_dir = AUDIO_YETRACKER_DIR
+    else:
+        base_dir = AUDIO_DIR
+
+    id_dir = base_dir / file_id
+
+    # If id/hash directory exists, look for any audio file in it
+    if id_dir.exists() and id_dir.is_dir():
+        for file_path in id_dir.iterdir():
             if file_path.is_file() and file_path.suffix.lower() in [".mp3", ".m4a", ".flac", ".wav", ".ogg", ".opus"]:
                 return file_path
-    
-    # Fallback: check old format (flat structure with hash)
-    for ext in [".mp3", ".m4a", ".flac", ".wav", ".ogg", ".opus"]:
-        path = AUDIO_DIR / f"{hash_val}{ext}"
-        if path.exists():
-            return path
-    
+
+    # Fallback: check old format (flat structure with hash) — pillows only
+    if host == "pillows":
+        for ext in [".mp3", ".m4a", ".flac", ".wav", ".ogg", ".opus"]:
+            path = base_dir / f"{file_id}{ext}"
+            if path.exists():
+                return path
+
     return None
 
 
 def download_track(track_id: str) -> Optional[Path]:
-    """Download a track from pillows.su API, preserving original filename."""
+    """Download a track from pillows.su or files.yetracker.org, preserving original filename."""
     track = get_track_index().get(track_id)
     if not track:
         return None
 
-    hash_val = track["hash"]
-    hash_dir = AUDIO_DIR / hash_val
-    
-    # If file already exists for this hash, reuse it
+    file_id = track["hash"]
+    host = track.get("host", "pillows")
+
+    if host == "yetracker":
+        base_dir = AUDIO_YETRACKER_DIR
+        download_url = f"https://files.yetracker.org/d/{file_id}"
+    else:
+        base_dir = AUDIO_DIR
+        download_url = f"https://api.pillows.su/api/download/{file_id}"
+
+    id_dir = base_dir / file_id
+
+    # If file already exists, reuse it
     existing_path = get_audio_path(track_id)
     if existing_path and existing_path.exists():
         return existing_path
-    
-    download_url = f"https://api.pillows.su/api/download/{hash_val}"
     
     # Create SSL context
     context = ssl._create_unverified_context()
@@ -301,20 +347,18 @@ def download_track(track_id: str) -> Optional[Path]:
                 print(f"Warning: Extracted filename seems incorrect: '{original_filename}'")
                 print(f"Content-Disposition header: {content_disp}")
             
-            # Create hash directory to organize files
-            hash_dir.mkdir(parents=True, exist_ok=True)
-            
-            # If file with same name exists, add track_id to make it unique
-            audio_path = hash_dir / original_filename
+            # Create id directory to organize files
+            id_dir.mkdir(parents=True, exist_ok=True)
+
+            audio_path = id_dir / original_filename
             if audio_path.exists():
-                # Same hash, same filename - it's the same file, reuse it
                 return audio_path
-            
+
             # Download file
             with open(audio_path, "wb") as f:
                 f.write(response.read())
-            
-            print(f"Downloaded: {original_filename} (hash: {hash_val})")
+
+            print(f"Downloaded: {original_filename} ({file_id})")
             return audio_path
     except Exception as e:
         print(f"Error downloading track {track_id}: {e}")
@@ -401,6 +445,13 @@ def extract_album_art(audio_path: Path) -> Optional[Path]:
         print(f"Error extracting artwork from {audio_path}: {e}")
     
     return None
+
+
+def _era_slug(era: str) -> str:
+    """Slugify era name for cache filenames."""
+    s = re.sub(r"[^\w\s-]", "", era).strip().lower()
+    s = re.sub(r"[-\s]+", "_", s)
+    return s[:80] or "unknown"
 
 
 # Flask routes
@@ -539,26 +590,44 @@ def api_play(track_id: str):
 @app.route("/api/artwork/<track_id>")
 @login_required
 def api_artwork(track_id: str):
-    """Serve album artwork for a track."""
+    """Serve album artwork for a track (embedded first, then section default from sheet)."""
     audio_path = get_audio_path(track_id)
     if not audio_path or not audio_path.exists():
         return jsonify({"error": "Track not found"}), 404
-    
-    # Try to find existing artwork
+
+    # 1. Existing extracted artwork
     artwork_path = ARTWORK_DIR / f"{audio_path.stem}.jpg"
-    
-    # If artwork doesn't exist, try to extract it
-    if not artwork_path.exists() and HAS_ARTWORK_SUPPORT:
+    if artwork_path.exists():
+        return send_file(
+            str(artwork_path),
+            mimetype="image/jpeg",
+            as_attachment=False,
+        )
+
+    # 2. Extract from audio file
+    if HAS_ARTWORK_SUPPORT:
         artwork_path = extract_album_art(audio_path)
-    
     if artwork_path and artwork_path.exists():
         return send_file(
             str(artwork_path),
             mimetype="image/jpeg",
             as_attachment=False,
         )
-    
-    # Return 204 No Content if no artwork
+
+    # 3. Fallback: section default (data/artwork/_era_{slug}.jpg, downloaded by main.py)
+    track = get_track_index().get(track_id)
+    if track:
+        era = (track.get("era") or "").strip()
+        if era:
+            slug = _era_slug(era)
+            section_path = ARTWORK_DIR / f"_era_{slug}.jpg"
+            if section_path.exists():
+                return send_file(
+                    str(section_path),
+                    mimetype="image/jpeg",
+                    as_attachment=False,
+                )
+
     return Response(status=204)
 
 

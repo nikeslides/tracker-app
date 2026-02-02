@@ -21,9 +21,11 @@ import config
 
 # Configuration - uses shared config
 DATA_DIR = Path(config.output_path())
-AUDIO_DIR = DATA_DIR / "audio"
+AUDIO_DIR = DATA_DIR / "audio"  # pillows.su files
+AUDIO_YETRACKER_DIR = DATA_DIR / "audio_yetracker"  # files.yetracker.org files (separate)
 JSON_PATH = DATA_DIR / "sheet.json"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+AUDIO_YETRACKER_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def extract_pillows_hash(link: str) -> Optional[str]:
@@ -31,6 +33,14 @@ def extract_pillows_hash(link: str) -> Optional[str]:
     if not link:
         return None
     match = re.search(r"pillows\.su/f/([a-f0-9]+)", link, re.IGNORECASE)
+    return match.group(1) if match else None
+
+
+def extract_yetracker_id(link: str) -> Optional[str]:
+    """Extract file ID from files.yetracker.org link (e.g. f/5YWrQGTB)."""
+    if not link:
+        return None
+    match = re.search(r"files\.yetracker\.org/f/([a-zA-Z0-9]+)", link, re.IGNORECASE)
     return match.group(1) if match else None
 
 
@@ -58,10 +68,11 @@ def load_tracks() -> List[Dict]:
     for track in tracks:
         link = track.get("Link", "").strip()
         quality = track.get("Quality", "").strip()
-        
-        # Only include tracks with pillows.su links and quality != "Not Available"
-        # This matches the player's filtering logic exactly
-        if "pillows.su" in link.lower() and quality != "Not Available":
+        if quality == "Not Available":
+            continue
+
+        # Pillows.su links (unchanged — matches player logic)
+        if "pillows.su" in link.lower():
             hash_val = extract_pillows_hash(link)
             if hash_val:
                 track_id = generate_track_id(track)
@@ -74,6 +85,24 @@ def load_tracks() -> List[Dict]:
                     "available_length": track.get("Available Length", "").strip(),
                     "track_length": track.get("Track Length", "").strip(),
                     "hash": hash_val,
+                    "host": "pillows",
+                    "original_link": link,
+                })
+        # files.yetracker.org links (separate folder)
+        elif "files.yetracker.org" in link.lower():
+            file_id = extract_yetracker_id(link)
+            if file_id:
+                track_id = generate_track_id(track)
+                processed.append({
+                    "id": track_id,
+                    "name": track.get("Name", "").strip(),
+                    "era": track.get("Era", "").strip(),
+                    "notes": track.get("Notes", "").strip(),
+                    "quality": quality,
+                    "available_length": track.get("Available Length", "").strip(),
+                    "track_length": track.get("Track Length", "").strip(),
+                    "hash": file_id,
+                    "host": "yetracker",
                     "original_link": link,
                 })
 
@@ -82,24 +111,26 @@ def load_tracks() -> List[Dict]:
 
 def get_audio_path(track: Dict) -> Optional[Path]:
     """Get local path for a track's audio file."""
-    hash_val = track["hash"]
-    hash_dir = AUDIO_DIR / hash_val
-    
+    file_id = track["hash"]
+    host = track.get("host", "pillows")
+    base_dir = AUDIO_YETRACKER_DIR if host == "yetracker" else AUDIO_DIR
+    id_dir = base_dir / file_id
+
     # Supported audio/video file extensions
     audio_extensions = [".mp3", ".m4a", ".flac", ".wav", ".ogg", ".opus", ".aif", ".aiff", ".mp4", ".mov", ".webm", ".mkv"]
-    
-    # If hash directory exists, look for any audio file in it
-    if hash_dir.exists() and hash_dir.is_dir():
-        for file_path in hash_dir.iterdir():
+
+    if id_dir.exists() and id_dir.is_dir():
+        for file_path in id_dir.iterdir():
             if file_path.is_file() and file_path.suffix.lower() in audio_extensions:
                 return file_path
-    
-    # Fallback: check old format (flat structure with hash)
-    for ext in audio_extensions:
-        path = AUDIO_DIR / f"{hash_val}{ext}"
-        if path.exists():
-            return path
-    
+
+    # Fallback: flat structure (pillows only)
+    if host == "pillows":
+        for ext in audio_extensions:
+            path = base_dir / f"{file_id}{ext}"
+            if path.exists():
+                return path
+
     return None
 
 
@@ -117,19 +148,20 @@ def sanitize_filename(filename: str) -> str:
 
 
 def download_track(track: Dict) -> Optional[Path]:
-    """Download a track from pillows.su API, preserving original filename.
-    
-    This matches the player's download_track() function logic exactly.
-    """
-    hash_val = track["hash"]
-    hash_dir = AUDIO_DIR / hash_val
-    
-    # If file already exists for this hash, reuse it
+    """Download a track from pillows.su or files.yetracker.org, preserving original filename."""
+    file_id = track["hash"]
+    host = track.get("host", "pillows")
+    base_dir = AUDIO_YETRACKER_DIR if host == "yetracker" else AUDIO_DIR
+    id_dir = base_dir / file_id
+
     existing_path = get_audio_path(track)
     if existing_path and existing_path.exists():
         return existing_path
-    
-    download_url = f"https://api.pillows.su/api/download/{hash_val}"
+
+    if host == "yetracker":
+        download_url = f"https://files.yetracker.org/d/{file_id}"
+    else:
+        download_url = f"https://api.pillows.su/api/download/{file_id}"
     
     # Create SSL context
     context = ssl._create_unverified_context()
@@ -195,19 +227,14 @@ def download_track(track: Dict) -> Optional[Path]:
                 print(f"Warning: Extracted filename seems incorrect: '{original_filename}'")
                 print(f"Content-Disposition header: {content_disp}")
             
-            # Create hash directory to organize files
-            hash_dir.mkdir(parents=True, exist_ok=True)
-            
-            # If file with same name exists, add track_id to make it unique
-            audio_path = hash_dir / original_filename
+            id_dir.mkdir(parents=True, exist_ok=True)
+            audio_path = id_dir / original_filename
             if audio_path.exists():
-                # Same hash, same filename - it's the same file, reuse it
                 return audio_path
-            
-            # Download file
+
             with open(audio_path, "wb") as f:
                 f.write(response.read())
-            
+
             return audio_path
     except Exception as e:
         raise Exception(f"Error downloading track: {e}")

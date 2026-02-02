@@ -8,6 +8,11 @@ output_path = "./data"
 # Google Sheets link to the tracker spreadsheet
 sheet_link = "https://docs.google.com/spreadsheets/d/<sheet_id>/htmlview"
 
+# Sheet tab ID (gid) for scraping section artwork from htmlview/sheet.
+sheet_gid = "0"
+
 # How often to auto-refresh the sheet (in seconds)
 # 3600 = 1 hour, 1800 = 30 minutes, 7200 = 2 hours
 refresh_interval = 3600
+
+# Section default artwork: main.py scrapes images from htmlview/sheet and saves to data/artwork/

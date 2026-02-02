@@ -8,6 +8,7 @@ const audioPlayer = document.getElementById("audio-player");
 const fixedPlayer = document.getElementById("fixed-player");
 const playerTrackName = document.getElementById("player-track-name");
 const playerTrackArtists = document.getElementById("player-track-artists");
+const playerTrackProducers = document.getElementById("player-track-producers");
 const albumArt = document.getElementById("album-art");
 const albumArtPlaceholder = document.getElementById("album-art-placeholder");
 const btnPlayPause = document.getElementById("btn-play-pause");
@@ -31,6 +32,12 @@ const sectionsSelectEl = document.getElementById("sections-select");
 const playlistTitleEl = document.getElementById("playlist-title");
 const playlistSubtitleEl = document.getElementById("playlist-subtitle");
 const playlistTracksEl = document.getElementById("playlist-tracks");
+
+// Clear Media Session on load so Web Scrobbler (and OS media controls) don't show stale track
+if ('mediaSession' in navigator) {
+  navigator.mediaSession.metadata = null;
+  navigator.mediaSession.playbackState = 'none';
+}
 
 // Load saved volume from localStorage, default to 0.7
 let volume = parseFloat(localStorage.getItem('playerVolume')) || 0.7;
@@ -153,15 +160,50 @@ function processTrackData() {
   });
 }
 
+/**
+ * Display artist for scrobbling/Media Session: "Kanye West (feat. X)".
+ * No producer or "with" — those go in a separate producers div.
+ */
 function extractArtists(name) {
-  const parts = [];
-  const withMatch = name.match(/\(with\s+([^)]+)\)/i);
-  if (withMatch) parts.push(`with ${withMatch[1]}`);
   const featMatch = name.match(/\(feat\.\s+([^)]+)\)/i);
-  if (featMatch) parts.push(`feat. ${featMatch[1]}`);
+  const featPart = featMatch ? ` (feat. ${featMatch[1]})` : "";
+  const firstLine = name.split("\n")[0].trim();
+  const leadArtistMatch = firstLine.match(/^([^–—-]+?)\s*[–—-]\s+.+$/);
+  if (leadArtistMatch) return leadArtistMatch[1].trim() + featPart;
+  return "Kanye West" + featPart;
+}
+
+/** Producer credits only — shown in separate div, not used for scrobbling. */
+function extractProducers(name) {
   const prodMatch = name.match(/\(prod\.\s+([^)]+)\)/i);
-  if (prodMatch) parts.push(`prod. ${prodMatch[1]}`);
-  return parts.join(" • ");
+  return prodMatch ? prodMatch[1].trim() : "";
+}
+
+/**
+ * Artist string for scrobbling/Media Session only — no "(feat. X)" so Last.fm
+ * gets a clean artist. The UI still shows extractArtists() (with feat.).
+ */
+function getScrobbleArtist(name) {
+  const firstLine = name.split("\n")[0].trim();
+  const leadArtistMatch = firstLine.match(/^([^–—-]+?)\s*[–—-]\s+.+$/);
+  if (leadArtistMatch) return leadArtistMatch[1].trim();
+  return "Kanye West";
+}
+
+/**
+ * Title for scrobbling/Media Session only — strips leading emojis and version
+ * tag (e.g. [V4]) so Last.fm gets a clean title. The UI still shows cleanTrackTitle().
+ */
+function getScrobbleTitle(name) {
+  let first = (name || "").split("\n")[0].trim();
+  first = first.replace(/\s*\[V\d+\]\s*$/i, "").trim();
+  first = first.replace(/^[\s\p{So}\p{Sk}]+/u, "").trim();
+  return first || (name || "").split("\n")[0].trim();
+}
+
+function cleanTrackTitle(name) {
+  let first = name.split("\n")[0].trim();
+  return first || name.split("\n")[0].trim();
 }
 
 function formatTime(seconds) {
@@ -265,21 +307,26 @@ async function playTrack(trackId) {
   });
 
   const artists = extractArtists(track.name);
-  const cleanName = track.name.split("\n")[0].trim();
-  
+  const cleanName = cleanTrackTitle(track.name);
+  const producers = extractProducers(track.name);
+
   playerTrackName.textContent = cleanName;
   playerTrackArtists.textContent = artists || "";
-  
+  if (playerTrackProducers) {
+    playerTrackProducers.textContent = producers ? `prod. ${producers}` : "";
+    playerTrackProducers.style.display = producers ? "" : "none";
+  }
+
   // Update document title to show current track
   const titleSuffix = artists ? `${cleanName} - ${artists}` : cleanName;
   document.title = `${titleSuffix} | Yzyfi`;
-  
-  // Update Media Session metadata for iOS Control Center, Android notifications, etc.
+
+  // Update Media Session metadata (Web Scrobbler / Last.fm get clean title + artist)
   if ('mediaSession' in navigator) {
     const artworkUrl = `/api/artwork/${trackId}`;
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: cleanName,
-      artist: artists || track.era || "Unknown Artist",
+      title: getScrobbleTitle(track.name),
+      artist: getScrobbleArtist(track.name) || track.era || "Unknown Artist",
       album: track.era || "Yzyfi",
       artwork: [
         { src: artworkUrl, sizes: '300x300', type: 'image/jpeg' },
@@ -694,13 +741,17 @@ function createTrackCard(track, idx) {
   card.dataset.trackId = track.id;
   
   const artists = extractArtists(track.name);
-  const cleanName = track.name.split("\n")[0].trim();
-  
+  const cleanName = cleanTrackTitle(track.name);
+  const producers = extractProducers(track.name);
+
   card.innerHTML = `
     <div class="track-index">${idx + 1}</div>
     <div class="track-info">
       <div class="track-name">${escapeHtml(cleanName)}</div>
-      ${artists ? `<div class="track-artists">${escapeHtml(artists)}</div>` : ""}
+      <div class="track-meta-line">
+        ${artists ? `<span class="track-artists">${escapeHtml(artists)}</span>` : ""}
+        ${producers ? `<span class="track-producers">prod. ${escapeHtml(producers)}</span>` : ""}
+      </div>
       ${searchQuery ? `<div class="track-era-label">${escapeHtml(track.era || "Unknown Era")}</div>` : ""}
     </div>
     <div class="track-meta">

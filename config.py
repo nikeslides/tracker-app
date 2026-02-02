@@ -36,6 +36,8 @@ def load_config() -> dict:
         config["sheet_link"] = os.environ["SHEET_LINK"]
     if os.environ.get("REFRESH_INTERVAL"):
         config["refresh_interval"] = int(os.environ["REFRESH_INTERVAL"])
+    if os.environ.get("SHEET_GID") is not None:
+        config["sheet_gid"] = str(os.environ["SHEET_GID"]).strip()
 
     # Resolve relative paths
     config["output_path"] = str(Path(config["output_path"]).resolve())
@@ -60,3 +62,8 @@ def sheet_link() -> str:
 
 def refresh_interval() -> int:
     return get("refresh_interval", 3600)
+
+
+def sheet_gid() -> str:
+    """Sheet tab ID (gid) for htmlview/sheet scraping. Default "0"."""
+    return get("sheet_gid", "0")
