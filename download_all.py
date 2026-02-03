@@ -23,9 +23,11 @@ import config
 DATA_DIR = Path(config.output_path())
 AUDIO_DIR = DATA_DIR / "audio"  # pillows.su files
 AUDIO_YETRACKER_DIR = DATA_DIR / "audio_yetracker"  # files.yetracker.org files (separate)
+AUDIO_PIXELDRAIN_DIR = DATA_DIR / "audio_pixeldrain"  # pixeldrain.com files (separate)
 JSON_PATH = DATA_DIR / "sheet.json"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 AUDIO_YETRACKER_DIR.mkdir(parents=True, exist_ok=True)
+AUDIO_PIXELDRAIN_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def extract_pillows_hash(link: str) -> Optional[str]:
@@ -41,6 +43,14 @@ def extract_yetracker_id(link: str) -> Optional[str]:
     if not link:
         return None
     match = re.search(r"files\.yetracker\.org/f/([a-zA-Z0-9]+)", link, re.IGNORECASE)
+    return match.group(1) if match else None
+
+
+def extract_pixeldrain_id(link: str) -> Optional[str]:
+    """Extract file ID from pixeldrain.com link (e.g. u/4Hjx3akP)."""
+    if not link:
+        return None
+    match = re.search(r"pixeldrain\.com/u/([a-zA-Z0-9]+)", link, re.IGNORECASE)
     return match.group(1) if match else None
 
 
@@ -105,6 +115,23 @@ def load_tracks() -> List[Dict]:
                     "host": "yetracker",
                     "original_link": link,
                 })
+        # pixeldrain.com links (separate folder)
+        elif "pixeldrain.com" in link.lower():
+            file_id = extract_pixeldrain_id(link)
+            if file_id:
+                track_id = generate_track_id(track)
+                processed.append({
+                    "id": track_id,
+                    "name": track.get("Name", "").strip(),
+                    "era": track.get("Era", "").strip(),
+                    "notes": track.get("Notes", "").strip(),
+                    "quality": quality,
+                    "available_length": track.get("Available Length", "").strip(),
+                    "track_length": track.get("Track Length", "").strip(),
+                    "hash": file_id,
+                    "host": "pixeldrain",
+                    "original_link": link,
+                })
 
     return processed
 
@@ -113,7 +140,7 @@ def get_audio_path(track: Dict) -> Optional[Path]:
     """Get local path for a track's audio file."""
     file_id = track["hash"]
     host = track.get("host", "pillows")
-    base_dir = AUDIO_YETRACKER_DIR if host == "yetracker" else AUDIO_DIR
+    base_dir = AUDIO_YETRACKER_DIR if host == "yetracker" else (AUDIO_PIXELDRAIN_DIR if host == "pixeldrain" else AUDIO_DIR)
     id_dir = base_dir / file_id
 
     # Supported audio/video file extensions
@@ -148,10 +175,10 @@ def sanitize_filename(filename: str) -> str:
 
 
 def download_track(track: Dict) -> Optional[Path]:
-    """Download a track from pillows.su or files.yetracker.org, preserving original filename."""
+    """Download a track from pillows.su, files.yetracker.org, or pixeldrain.com, preserving original filename."""
     file_id = track["hash"]
     host = track.get("host", "pillows")
-    base_dir = AUDIO_YETRACKER_DIR if host == "yetracker" else AUDIO_DIR
+    base_dir = AUDIO_YETRACKER_DIR if host == "yetracker" else (AUDIO_PIXELDRAIN_DIR if host == "pixeldrain" else AUDIO_DIR)
     id_dir = base_dir / file_id
 
     existing_path = get_audio_path(track)
@@ -160,6 +187,8 @@ def download_track(track: Dict) -> Optional[Path]:
 
     if host == "yetracker":
         download_url = f"https://files.yetracker.org/d/{file_id}"
+    elif host == "pixeldrain":
+        download_url = f"https://pixeldrain.com/api/file/{file_id}"
     else:
         download_url = f"https://api.pillows.su/api/download/{file_id}"
     

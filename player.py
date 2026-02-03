@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Music player server for the Tracker sheet data.
-Serves a web interface to play tracks from pillows.su and files.yetracker.org links.
-Pillows files live in audio/; yetracker files in audio_yetracker/ (separate folder).
+Serves a web interface to play tracks from pillows.su, files.yetracker.org, and pixeldrain.com links.
+Pillows files live in audio/; yetracker in audio_yetracker/; pixeldrain in audio_pixeldrain/ (separate folders).
 """
 
 import hashlib
@@ -61,10 +61,12 @@ def login_required(f):
 DATA_DIR = Path(config.output_path())
 AUDIO_DIR = DATA_DIR / "audio"  # pillows.su files (unchanged)
 AUDIO_YETRACKER_DIR = DATA_DIR / "audio_yetracker"  # files.yetracker.org files (separate)
+AUDIO_PIXELDRAIN_DIR = DATA_DIR / "audio_pixeldrain"  # pixeldrain.com files (separate)
 ARTWORK_DIR = DATA_DIR / "artwork"
 JSON_PATH = DATA_DIR / "sheet.json"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 AUDIO_YETRACKER_DIR.mkdir(parents=True, exist_ok=True)
+AUDIO_PIXELDRAIN_DIR.mkdir(parents=True, exist_ok=True)
 ARTWORK_DIR.mkdir(parents=True, exist_ok=True)
 
 # In-memory track cache
@@ -87,6 +89,14 @@ def extract_yetracker_id(link: str) -> Optional[str]:
     if not link:
         return None
     match = re.search(r"files\.yetracker\.org/f/([a-zA-Z0-9]+)", link, re.IGNORECASE)
+    return match.group(1) if match else None
+
+
+def extract_pixeldrain_id(link: str) -> Optional[str]:
+    """Extract file ID from pixeldrain.com link (e.g. u/4Hjx3akP)."""
+    if not link:
+        return None
+    match = re.search(r"pixeldrain\.com/u/([a-zA-Z0-9]+)", link, re.IGNORECASE)
     return match.group(1) if match else None
 
 
@@ -194,6 +204,23 @@ def load_tracks() -> List[Dict]:
                     "host": "yetracker",
                     "original_link": link,
                 })
+        # Include tracks with pixeldrain.com links (separate folder)
+        elif "pixeldrain.com" in link.lower():
+            file_id = extract_pixeldrain_id(link)
+            if file_id:
+                track_id = generate_track_id(track)
+                processed.append({
+                    "id": track_id,
+                    "name": track.get("Name", "").strip(),
+                    "era": track.get("Era", "").strip(),
+                    "notes": track.get("Notes", "").strip(),
+                    "quality": quality,
+                    "available_length": track.get("Available Length", "").strip(),
+                    "track_length": track.get("Track Length", "").strip(),
+                    "hash": file_id,
+                    "host": "pixeldrain",
+                    "original_link": link,
+                })
 
     with _cache_lock:
         _tracks_cache = processed
@@ -239,6 +266,8 @@ def get_audio_path(track_id: str) -> Path:
 
     if host == "yetracker":
         base_dir = AUDIO_YETRACKER_DIR
+    elif host == "pixeldrain":
+        base_dir = AUDIO_PIXELDRAIN_DIR
     else:
         base_dir = AUDIO_DIR
 
@@ -261,7 +290,7 @@ def get_audio_path(track_id: str) -> Path:
 
 
 def download_track(track_id: str) -> Optional[Path]:
-    """Download a track from pillows.su or files.yetracker.org, preserving original filename."""
+    """Download a track from pillows.su, files.yetracker.org, or pixeldrain.com, preserving original filename."""
     track = get_track_index().get(track_id)
     if not track:
         return None
@@ -272,6 +301,9 @@ def download_track(track_id: str) -> Optional[Path]:
     if host == "yetracker":
         base_dir = AUDIO_YETRACKER_DIR
         download_url = f"https://files.yetracker.org/d/{file_id}"
+    elif host == "pixeldrain":
+        base_dir = AUDIO_PIXELDRAIN_DIR
+        download_url = f"https://pixeldrain.com/api/file/{file_id}"
     else:
         base_dir = AUDIO_DIR
         download_url = f"https://api.pillows.su/api/download/{file_id}"
