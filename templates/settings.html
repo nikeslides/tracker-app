@@ -79,6 +79,96 @@
       background: #282828;
       border-color: #505050;
     }
+    .settings-filters-desc {
+      font-size: 0.8125rem;
+      color: #888;
+      margin: 0 0 1rem;
+      line-height: 1.4;
+    }
+    .settings-filters-list {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 0.75rem;
+    }
+    .settings-filter-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.75rem 0;
+      cursor: pointer;
+      font-size: 0.875rem;
+      color: #b3b3b3;
+      user-select: none;
+      border-bottom: 1px solid #282828;
+    }
+    .settings-filter-row:last-child {
+      border-bottom: none;
+    }
+    .settings-filter-row:hover {
+      color: #fff;
+    }
+    .settings-filter-label-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .settings-filter-emoji {
+      font-size: 1.125rem;
+    }
+    .settings-filter-label {
+      font-size: 0.875rem;
+    }
+    .settings-toggle-wrap {
+      position: relative;
+      flex-shrink: 0;
+    }
+    .settings-filter-checkbox {
+      position: absolute;
+      opacity: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      cursor: pointer;
+    }
+    .settings-toggle-track {
+      display: block;
+      width: 44px;
+      height: 24px;
+      border-radius: 12px;
+      background: #404040;
+      transition: background-color 0.2s ease;
+      position: relative;
+    }
+    .settings-filter-row:hover .settings-toggle-track {
+      background: #4a4a4a;
+    }
+    .settings-toggle-thumb {
+      position: absolute;
+      left: 2px;
+      top: 2px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fff;
+      transition: transform 0.2s ease;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .settings-filter-checkbox:checked + .settings-toggle-track {
+      background: #1db954;
+    }
+    .settings-filter-checkbox:checked + .settings-toggle-track .settings-toggle-thumb {
+      transform: translateX(20px);
+    }
+    .settings-filter-row.settings-filter-none .settings-filter-emoji {
+      font-size: 0.875rem;
+      color: #888;
+    }
+    .settings-filters-key {
+      font-size: 0.75rem;
+      color: #666;
+      line-height: 1.4;
+    }
   </style>
 </head>
 <body>
@@ -98,6 +188,13 @@
         <span class="settings-label">Log out</span>
         <a href="{{ url_for('logout') }}" class="btn-logout">Log out</a>
       </div>
+    </section>
+
+    <section class="settings-section" aria-labelledby="filters-heading">
+      <h2 id="filters-heading">Category filters</h2>
+      <p class="settings-filters-desc">Show or hide tracks by the emoji category in their name. Turn off a category to hide it in the library.</p>
+      <div id="settings-filters-list" class="settings-filters-list"></div>
+      <div id="settings-filters-key" class="settings-filters-key"></div>
     </section>
 
     {% if lastfm_available %}
@@ -128,5 +225,58 @@
     </section>
     {% endif %}
   </div>
+  <script>
+    (function() {
+      var EMOJI_NONE = "__none__";
+      var EMOJI_CATEGORIES = [
+        { emoji: "⭐", key: "best_of", label: "Best Of" },
+        { emoji: "🏆", key: "grails", label: "Grails" },
+        { emoji: "🥇", key: "wanted", label: "Wanted" },
+        { emoji: "✨", key: "special", label: "Special" },
+        { emoji: "🗑️", key: "worst_of", label: "Worst Of" },
+        { emoji: "🤖", key: "ai", label: "AI" },
+        { emoji: "⁉️", key: "lost_media", label: "Lost Media" }
+      ];
+      function storageKey(key) {
+        return "playerEmojiVisible_" + key;
+      }
+      function loadState() {
+        var state = {};
+        EMOJI_CATEGORIES.forEach(function(c) {
+          state[c.emoji] = localStorage.getItem(storageKey(c.emoji)) !== "false";
+        });
+        state[EMOJI_NONE] = localStorage.getItem(storageKey(EMOJI_NONE)) !== "false";
+        return state;
+      }
+      function addRow(listEl, key, emojiDisplay, labelText, checked) {
+        var row = document.createElement("label");
+        row.className = "settings-filter-row" + (key === EMOJI_NONE ? " settings-filter-none" : "");
+        row.innerHTML = "<span class=\"settings-filter-label-wrap\">" +
+          "<span class=\"settings-filter-emoji\">" + emojiDisplay + "</span>" +
+          "<span class=\"settings-filter-label\">" + labelText + "</span>" +
+          "</span>" +
+          "<span class=\"settings-toggle-wrap\">" +
+          "<input type=\"checkbox\" class=\"settings-filter-checkbox\" data-key=\"" + key + "\"" + (checked ? " checked" : "") + ">" +
+          "<span class=\"settings-toggle-track\"><span class=\"settings-toggle-thumb\"></span></span>" +
+          "</span>";
+        var cb = row.querySelector("input");
+        cb.addEventListener("change", function() {
+          localStorage.setItem(storageKey(key), cb.checked ? "true" : "false");
+        });
+        listEl.appendChild(row);
+      }
+      var listEl = document.getElementById("settings-filters-list");
+      var keyEl = document.getElementById("settings-filters-key");
+      if (!listEl) return;
+      var state = loadState();
+      addRow(listEl, EMOJI_NONE, "—", "No emoji / uncategorized", state[EMOJI_NONE] !== false);
+      EMOJI_CATEGORIES.forEach(function(c) {
+        addRow(listEl, c.emoji, c.emoji, c.label, state[c.emoji] !== false);
+      });
+      if (keyEl) {
+        keyEl.textContent = "Key: " + EMOJI_CATEGORIES.map(function(c) { return c.emoji + " " + c.label; }).join(" · ");
+      }
+    })();
+  </script>
 </body>
 </html>

@@ -754,6 +754,34 @@ def api_sections():
     return jsonify([{"era": s.get("era", "")} for s in sections])
 
 
+@app.route("/api/favorites", methods=["GET", "POST"])
+@login_required
+def api_favorites():
+    """GET: list favorite track IDs. POST: { track_id, favorite } to toggle (accounts only)."""
+    if not USE_ACCOUNTS or not ACCOUNTS_DB_PATH or not auth_db:
+        if request.method == "GET":
+            return jsonify([])
+        return jsonify({"ok": False}), 404
+    user_id = session.get("user_id")
+    if not user_id:
+        if request.method == "GET":
+            return jsonify([])
+        return jsonify({"ok": False}), 401
+    if request.method == "GET":
+        ids = auth_db.get_favorites(ACCOUNTS_DB_PATH, user_id)
+        return jsonify(ids)
+    data = request.get_json(silent=True) or {}
+    track_id = (data.get("track_id") or "").strip()
+    favorite = data.get("favorite", True)
+    if not track_id:
+        return jsonify({"ok": False}), 400
+    if favorite:
+        auth_db.add_favorite(ACCOUNTS_DB_PATH, user_id, track_id)
+    else:
+        auth_db.remove_favorite(ACCOUNTS_DB_PATH, user_id, track_id)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/refresh", methods=["POST"])
 @login_required
 def api_refresh():

@@ -57,6 +57,48 @@ let sections = [];
 let searchQuery = "";
 let selectedEra = localStorage.getItem("playerSelectedEra") || null;
 
+// Accounts-only: favorites and emoji category filters
+const useAccounts = document.body.dataset.useAccounts === "true";
+let favoriteTrackIds = new Set();
+const EMOJI_CATEGORIES = [
+  { emoji: "⭐", key: "best_of", label: "Best Of" },
+  { emoji: "🏆", key: "grails", label: "Grails" },
+  { emoji: "🥇", key: "wanted", label: "Wanted" },
+  { emoji: "✨", key: "special", label: "Special" },
+  { emoji: "🗑️", key: "worst_of", label: "Worst Of" },
+  { emoji: "🤖", key: "ai", label: "AI" },
+  { emoji: "⁉️", key: "lost_media", label: "Lost Media" },
+];
+const EMOJI_FILTER_NONE = "__none__";
+function getEmojiFilterStorageKey(emoji) {
+  return "playerEmojiVisible_" + emoji;
+}
+function loadEmojiFilterState() {
+  const state = {};
+  EMOJI_CATEGORIES.forEach(({ emoji }) => {
+    const raw = localStorage.getItem(getEmojiFilterStorageKey(emoji));
+    state[emoji] = raw === "false" ? false : true;
+  });
+  const rawNone = localStorage.getItem(getEmojiFilterStorageKey(EMOJI_FILTER_NONE));
+  state[EMOJI_FILTER_NONE] = rawNone === "false" ? false : true;
+  return state;
+}
+let emojiFilterVisible = loadEmojiFilterState();
+function getLeadingEmoji(name) {
+  if (!name || typeof name !== "string") return null;
+  const first = name.trim();
+  if (!first.length) return null;
+  for (const { emoji } of EMOJI_CATEGORIES) {
+    if (first.startsWith(emoji)) return emoji;
+  }
+  return null;
+}
+function matchesEmojiFilter(track) {
+  const emoji = track._leadingEmoji;
+  const key = emoji ?? EMOJI_FILTER_NONE;
+  return emojiFilterVisible[key] !== false;
+}
+
 async function loadTracks() {
   try {
     // Load both tracks and sections
@@ -70,6 +112,16 @@ async function loadTracks() {
     
         tracks = await tracksRes.json();
         sections = await jsonRes.json();
+        
+        if (useAccounts) {
+          try {
+            const favRes = await fetch("/api/favorites");
+            if (favRes.ok) {
+              const ids = await favRes.json();
+              favoriteTrackIds = new Set(Array.isArray(ids) ? ids : []);
+            }
+          } catch (_) {}
+        }
         
         processTrackData();
         renderTracks();
@@ -141,6 +193,8 @@ function processTrackData() {
     // Pre-calculate searchable string for better performance
     const artists = extractArtists(track.name);
     track._searchStr = `${track.name} ${era} ${artists} ${track.notes || ""}`.toLowerCase();
+    
+    if (useAccounts) track._leadingEmoji = getLeadingEmoji(track.name);
     
     tracksByEra[era].push(track);
   });
@@ -714,7 +768,9 @@ function renderTracks() {
 
   // If searching, show all matches across all eras
   if (searchQuery) {
-    const visible = allTracksFlat.filter(t => matchesSearch(t, searchQuery));
+    let visible = allTracksFlat.filter(t => matchesSearch(t, searchQuery));
+    if (useAccounts) visible = visible.filter(matchesEmojiFilter);
+    if (selectedEra === "__favorites__") visible = visible.filter(t => favoriteTrackIds.has(t.id));
     
     renderSidebar(eraOrder, tracksByEra);
     
@@ -738,14 +794,17 @@ function renderTracks() {
       target.appendChild(fragment);
     }
   } else {
-    // Normal era-based rendering
-    // Ensure we have a valid selected era
-    if (!selectedEra || !tracksByEra[selectedEra]) {
-      selectedEra = eraOrder[0] || "Unknown Era";
+    // Normal era-based rendering (or Favorites view)
+    if (selectedEra === "__favorites__") {
+      renderSidebar(eraOrder, tracksByEra);
+      renderFavoritesPlaylist();
+    } else {
+      if (!selectedEra || !tracksByEra[selectedEra]) {
+        selectedEra = eraOrder[0] || "Unknown Era";
+      }
+      renderSidebar(eraOrder, tracksByEra);
+      renderPlaylist(tracksByEra);
     }
-    
-    renderSidebar(eraOrder, tracksByEra);
-    renderPlaylist(tracksByEra);
   }
   
   updateVolumeDisplay();
@@ -775,6 +834,11 @@ function createTrackCard(track, idx) {
   const cleanName = cleanTrackTitle(track.name);
   const producers = extractProducers(track.name);
 
+  const favHtml = useAccounts
+    ? `<div class="favorite-btn" data-track-id="${escapeAttr(track.id)}" title="${favoriteTrackIds.has(track.id) ? "Remove from favorites" : "Add to favorites"}">
+         <i class="ti ti-heart${favoriteTrackIds.has(track.id) ? "-filled" : ""}"></i>
+       </div>`
+    : "";
   card.innerHTML = `
     <div class="track-index">${idx + 1}</div>
     <div class="track-info">
@@ -789,6 +853,7 @@ function createTrackCard(track, idx) {
       ${track.quality ? `<span>${escapeHtml(track.quality)}</span>` : ""}
       ${track.track_length ? `<span>${escapeHtml(track.track_length)}</span>` : ""}
     </div>
+    ${favHtml}
     <div class="share-btn" title="Copy link to track">
       <i class="ti ti-share"></i>
     </div>
@@ -796,6 +861,33 @@ function createTrackCard(track, idx) {
     <div class="info-tooltip">${escapeAttr(track.notes || "")}</div>
   `;
   
+  // Favorite button (accounts only)
+  if (useAccounts) {
+    const favBtn = card.querySelector(".favorite-btn");
+    if (favBtn) {
+      favBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const isFav = favoriteTrackIds.has(track.id);
+        const nextFav = !isFav;
+        favoriteTrackIds = new Set(favoriteTrackIds);
+        if (nextFav) favoriteTrackIds.add(track.id);
+        else favoriteTrackIds.delete(track.id);
+        const icon = favBtn.querySelector(".ti");
+        if (icon) {
+          icon.className = nextFav ? "ti ti-heart-filled" : "ti ti-heart";
+          favBtn.title = nextFav ? "Remove from favorites" : "Add to favorites";
+        }
+        updateFavoritesSidebar();
+        fetch("/api/favorites", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ track_id: track.id, favorite: nextFav }),
+        }).catch(() => {});
+        if (selectedEra === "__favorites__") renderTracks();
+      });
+    }
+  }
+
   // Share button logic
   const shareBtn = card.querySelector(".share-btn");
   if (shareBtn) {
@@ -853,7 +945,32 @@ function clearSearch() {
   }
 }
 
+function updateFavoritesSidebar() {
+  const btn = document.getElementById("btn-favorites");
+  const countEl = document.getElementById("favorites-count");
+  if (!btn) return;
+  btn.classList.toggle("active", selectedEra === "__favorites__");
+  if (countEl) countEl.textContent = String(favoriteTrackIds.size);
+}
+
 function renderSidebar(eraOrder, tracksByEra) {
+  if (useAccounts) {
+    const btnFav = document.getElementById("btn-favorites");
+    if (btnFav && !btnFav.dataset.bound) {
+      btnFav.dataset.bound = "true";
+      btnFav.addEventListener("click", () => {
+        selectedEra = "__favorites__";
+        localStorage.setItem("playerSelectedEra", selectedEra);
+        clearSearch();
+        renderTracks();
+        if (playlistTracksEl) playlistTracksEl.scrollTop = 0;
+      });
+    }
+    updateFavoritesSidebar();
+  }
+  
+  const countFilter = (arr) => useAccounts ? arr.filter(matchesEmojiFilter).length : arr.length;
+  
   // Mobile dropdown
   if (sectionsSelectEl) {
     if (!sectionsSelectEl.dataset.bound) {
@@ -867,11 +984,18 @@ function renderSidebar(eraOrder, tracksByEra) {
     }
     
     const selectFragment = document.createDocumentFragment();
+    if (useAccounts) {
+      const favOpt = document.createElement("option");
+      favOpt.value = "__favorites__";
+      favOpt.textContent = `Favorites (${favoriteTrackIds.size})`;
+      selectFragment.appendChild(favOpt);
+    }
     eraOrder.forEach(era => {
       const eraTracks = tracksByEra[era] || [];
       const total = eraTracks.length;
-      const matches = searchQuery ? eraTracks.filter(t => matchesSearch(t, searchQuery)).length : total;
-      const countText = searchQuery ? `${matches}/${total}` : `${total}`;
+      const filteredTotal = countFilter(eraTracks);
+      const matches = searchQuery ? eraTracks.filter(t => matchesSearch(t, searchQuery)).length : filteredTotal;
+      const countText = searchQuery ? `${matches}/${filteredTotal}` : `${filteredTotal}`;
       
       const opt = document.createElement("option");
       opt.value = era;
@@ -894,8 +1018,9 @@ function renderSidebar(eraOrder, tracksByEra) {
   eraOrder.forEach(era => {
     const eraTracks = tracksByEra[era] || [];
     const total = eraTracks.length;
-    const matches = searchQuery ? eraTracks.filter(t => matchesSearch(t, searchQuery)).length : total;
-    const countText = searchQuery ? `${matches}/${total}` : `${total}`;
+    const filteredTotal = countFilter(eraTracks);
+    const matches = searchQuery ? eraTracks.filter(t => matchesSearch(t, searchQuery)).length : filteredTotal;
+    const countText = searchQuery ? `${matches}/${filteredTotal}` : `${filteredTotal}`;
     
     const btn = document.createElement("button");
     btn.type = "button";
@@ -911,7 +1036,6 @@ function renderSidebar(eraOrder, tracksByEra) {
       localStorage.setItem("playerSelectedEra", selectedEra);
       clearSearch();
       renderTracks();
-      // Bring the playlist back to top when switching sections
       if (playlistTracksEl) playlistTracksEl.scrollTop = 0;
     });
     
@@ -924,12 +1048,13 @@ function renderSidebar(eraOrder, tracksByEra) {
 
 function renderPlaylist(tracksByEra) {
   const era = selectedEra || "Unknown Era";
-  const allInEra = tracksByEra[era] || [];
-  const visible = allInEra; // renderPlaylist is only called when not searching
+  let allInEra = tracksByEra[era] || [];
+  if (useAccounts) allInEra = allInEra.filter(matchesEmojiFilter);
+  const visible = allInEra;
   
   if (playlistTitleEl) playlistTitleEl.textContent = era;
   if (playlistSubtitleEl) {
-    playlistSubtitleEl.textContent = `${allInEra.length} tracks`;
+    playlistSubtitleEl.textContent = `${visible.length} tracks`;
   }
   
   const target = playlistTracksEl || tracksContainer;
@@ -937,6 +1062,33 @@ function renderPlaylist(tracksByEra) {
   
   if (!visible.length) {
     target.innerHTML = "<div class='error'>No tracks available in this section.</div>";
+    return;
+  }
+  
+  const fragment = document.createDocumentFragment();
+  visible.forEach((track, idx) => {
+    const card = createTrackCard(track, idx);
+    fragment.appendChild(card);
+  });
+  
+  target.innerHTML = "";
+  target.appendChild(fragment);
+}
+
+function renderFavoritesPlaylist() {
+  let visible = allTracksFlat.filter(t => favoriteTrackIds.has(t.id));
+  if (useAccounts) visible = visible.filter(matchesEmojiFilter);
+  
+  if (playlistTitleEl) playlistTitleEl.textContent = "Favorites";
+  if (playlistSubtitleEl) {
+    playlistSubtitleEl.textContent = `${visible.length} track${visible.length === 1 ? "" : "s"}`;
+  }
+  
+  const target = playlistTracksEl || tracksContainer;
+  if (!target) return;
+  
+  if (!visible.length) {
+    target.innerHTML = "<div class='error'>No favorites yet. Click the heart on any track to add it here.</div>";
     return;
   }
   
@@ -971,6 +1123,14 @@ function escapeAttr(str) {
   // Preserve newlines via CSS (white-space: pre-wrap).
   return escapeHtml(str);
 }
+
+// Re-read category filter state when returning from settings (e.g. back button)
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted || document.visibilityState === "visible") {
+    emojiFilterVisible = loadEmojiFilterState();
+    if (tracks.length > 0) renderTracks();
+  }
+});
 
 // Debounce function to limit how often a function can run
 function debounce(func, wait) {

@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body class="player-body">
+<body class="player-body" data-use-accounts="{{ 'true' if use_accounts else 'false' }}">
   <div class="container">
     <div class="fixed-player" id="fixed-player">
       <div class="player-left">
@@ -86,6 +86,15 @@
             </span>
             <button class="search-clear" id="search-clear" style="display: none;" title="Clear search">×</button>
           </div>
+          {% if use_accounts %}
+          <div id="favorites-section" class="sidebar-favorites">
+            <button type="button" id="btn-favorites" class="section-item favorites-item" data-era="__favorites__" title="Your favorited tracks">
+              <i class="ti ti-heart"></i>
+              <span class="section-name">Favorites</span>
+              <span class="section-count" id="favorites-count">0</span>
+            </button>
+          </div>
+          {% endif %}
           <div class="sidebar-title">Sections</div>
           <select id="sections-select" class="sections-select" aria-label="Select section"></select>
           <div id="sections-list" class="sections-list">

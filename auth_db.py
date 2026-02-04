@@ -6,7 +6,7 @@ Used when the server is started with --accounts.
 import sqlite3
 import secrets
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -35,8 +35,16 @@ CREATE TABLE IF NOT EXISTS user_lastfm (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS user_favorites (
+    user_id INTEGER NOT NULL,
+    track_id TEXT NOT NULL,
+    PRIMARY KEY (user_id, track_id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_invite_key ON invite_keys(key);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_user_favorites_user ON user_favorites(user_id);
 """
 
 
@@ -171,5 +179,44 @@ def clear_lastfm_session(db_path: Path, user_id: int) -> bool:
     """Remove Last.fm link for user. Returns True if a row was deleted."""
     with get_connection(db_path) as conn:
         cur = conn.execute("DELETE FROM user_lastfm WHERE user_id = ?", (user_id,))
+        conn.commit()
+        return cur.rowcount > 0
+
+
+# --- Favorites (per-account) ---
+
+def get_favorites(db_path: Path, user_id: int) -> List[str]:
+    """Return list of track_ids favorited by user."""
+    with get_connection(db_path) as conn:
+        cur = conn.execute(
+            "SELECT track_id FROM user_favorites WHERE user_id = ? ORDER BY track_id",
+            (user_id,),
+        )
+        return [row["track_id"] for row in cur.fetchall()]
+
+
+def add_favorite(db_path: Path, user_id: int, track_id: str) -> None:
+    """Add track to user's favorites. Idempotent."""
+    track_id = (track_id or "").strip()
+    if not track_id:
+        return
+    with get_connection(db_path) as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO user_favorites (user_id, track_id) VALUES (?, ?)",
+            (user_id, track_id),
+        )
+        conn.commit()
+
+
+def remove_favorite(db_path: Path, user_id: int, track_id: str) -> bool:
+    """Remove track from user's favorites. Returns True if a row was deleted."""
+    track_id = (track_id or "").strip()
+    if not track_id:
+        return False
+    with get_connection(db_path) as conn:
+        cur = conn.execute(
+            "DELETE FROM user_favorites WHERE user_id = ? AND track_id = ?",
+            (user_id, track_id),
+        )
         conn.commit()
         return cur.rowcount > 0
