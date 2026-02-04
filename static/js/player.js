@@ -274,7 +274,7 @@ function updateRepeatDisplay() {
   } else if (repeatMode === 'one') {
     btnRepeat.classList.add('repeat-one');
     btnRepeat.style.color = '#1db954';
-    if (repeatIcon) repeatIcon.className = 'ti ti-repeat';
+    if (repeatIcon) repeatIcon.className = 'ti ti-repeat-once';
     btnRepeat.title = 'Repeat One';
   } else if (repeatMode === 'all') {
     btnRepeat.classList.add('repeat-all');
@@ -436,7 +436,9 @@ function playNext() {
   const trackList = shuffleEnabled && shuffledTracks.length > 0 ? shuffledTracks : allTracksFlat;
   
   if (repeatMode === 'one') {
-    // Repeat current track
+    // Repeat current track — reset Last.fm so this loop gets one now-playing and one scrobble
+    lastfmNowPlayingSentForTrackId = null;
+    lastfmScrobbledTrackId = null;
     audioPlayer.currentTime = 0;
     audioPlayer.play();
     return;
