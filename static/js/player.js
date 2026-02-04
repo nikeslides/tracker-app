@@ -1,6 +1,8 @@
 let tracks = [];
 let currentTrackId = null;
 let currentTrackIndex = -1;
+/** List used for next/prev; follows the view (favorites, section, or search) from which the user started playback. */
+let currentPlaylist = [];
 let allTracksFlat = [];
 let tracksByEra = {};
 let eraOrder = [];
@@ -359,10 +361,30 @@ async function playTrack(trackId) {
   // Reset Last.fm flags so this track gets one now-playing and one scrobble (not on seek/pause)
   lastfmNowPlayingSentForTrackId = null;
   lastfmScrobbledTrackId = null;
-  // Use shuffled tracks if shuffle is enabled, otherwise use normal order
-  const trackList = shuffleEnabled && shuffledTracks.length > 0 ? shuffledTracks : allTracksFlat;
-  currentTrackIndex = trackList.findIndex(t => t.id === trackId);
-  
+  // Use the visible list for the current view (favorites, section, or search) so next/prev follow that list
+  const visible = getVisiblePlaylist();
+  const idxInVisible = visible.findIndex(t => t.id === trackId);
+  if (idxInVisible >= 0) {
+    if (shuffleEnabled) {
+      currentPlaylist = shuffleArray(visible);
+      const currentTrack = currentPlaylist.find(t => t.id === trackId);
+      if (currentTrack) {
+        const i = currentPlaylist.indexOf(currentTrack);
+        currentPlaylist.splice(i, 1);
+        currentPlaylist.unshift(currentTrack);
+      }
+      currentTrackIndex = 0;
+    } else {
+      currentPlaylist = visible;
+      currentTrackIndex = idxInVisible;
+    }
+  } else {
+    // Track not in current view (e.g. opened from URL or removed from favorites); use full catalog
+    currentPlaylist = shuffleEnabled && shuffledTracks.length > 0 ? shuffledTracks : allTracksFlat;
+    currentTrackIndex = currentPlaylist.findIndex(t => t.id === trackId);
+    if (currentTrackIndex < 0) currentTrackIndex = 0;
+  }
+
   // Save current track to localStorage
   localStorage.setItem('playerCurrentTrack', trackId);
   
@@ -490,8 +512,8 @@ function playPause() {
 }
 
 function playNext() {
-  const trackList = shuffleEnabled && shuffledTracks.length > 0 ? shuffledTracks : allTracksFlat;
-  
+  const trackList = currentPlaylist.length > 0 ? currentPlaylist : (shuffleEnabled && shuffledTracks.length > 0 ? shuffledTracks : allTracksFlat);
+
   if (repeatMode === 'one') {
     // Repeat current track — reset Last.fm so this loop gets one now-playing and one scrobble
     lastfmNowPlayingSentForTrackId = null;
@@ -500,7 +522,7 @@ function playNext() {
     audioPlayer.play();
     return;
   }
-  
+
   if (currentTrackIndex >= 0 && currentTrackIndex < trackList.length - 1) {
     playTrack(trackList[currentTrackIndex + 1].id);
   } else if (currentTrackIndex === trackList.length - 1) {
@@ -518,8 +540,8 @@ function playNext() {
 }
 
 function playPrevious() {
-  const trackList = shuffleEnabled && shuffledTracks.length > 0 ? shuffledTracks : allTracksFlat;
-  
+  const trackList = currentPlaylist.length > 0 ? currentPlaylist : (shuffleEnabled && shuffledTracks.length > 0 ? shuffledTracks : allTracksFlat);
+
   if (audioPlayer.currentTime > 3) {
     // If more than 3 seconds in, restart current track
     audioPlayer.currentTime = 0;
@@ -759,6 +781,25 @@ function matchesSearch(track, query) {
   return track._searchStr.includes(lowerQuery);
 }
 
+/** Returns the list of tracks visible in the current view (search results, favorites, or section) for use as next/prev playlist. */
+function getVisiblePlaylist() {
+  if (searchQuery) {
+    let visible = allTracksFlat.filter(t => matchesSearch(t, searchQuery));
+    if (useAccounts) visible = visible.filter(matchesEmojiFilter);
+    if (selectedEra === "__favorites__") visible = visible.filter(t => favoriteTrackIds.has(t.id));
+    return visible;
+  }
+  if (selectedEra === "__favorites__") {
+    let visible = allTracksFlat.filter(t => favoriteTrackIds.has(t.id));
+    if (useAccounts) visible = visible.filter(matchesEmojiFilter);
+    return visible;
+  }
+  const era = selectedEra || eraOrder[0] || "Unknown Era";
+  let visible = tracksByEra[era] || [];
+  if (useAccounts) visible = visible.filter(matchesEmojiFilter);
+  return visible;
+}
+
 function renderTracks() {
   if (tracks.length === 0) {
     if (playlistTracksEl) {
@@ -811,18 +852,42 @@ function renderTracks() {
   }
   
   updateVolumeDisplay();
-  
-  // Recreate shuffled list if shuffle is enabled
+
+  // Keep play queue in sync with current view (favorites, section, or search)
+  currentPlaylist = getVisiblePlaylist();
+  if (currentPlaylist.length > 0) {
+    const idx = currentTrackId ? currentPlaylist.findIndex(t => t.id === currentTrackId) : -1;
+    if (idx >= 0) {
+      if (shuffleEnabled) {
+        currentPlaylist = shuffleArray(currentPlaylist);
+        const currentTrack = currentPlaylist.find(t => t.id === currentTrackId);
+        if (currentTrack) {
+          const i = currentPlaylist.indexOf(currentTrack);
+          currentPlaylist.splice(i, 1);
+          currentPlaylist.unshift(currentTrack);
+        }
+        currentTrackIndex = 0;
+      } else {
+        currentTrackIndex = idx;
+      }
+    } else {
+      // Current track not in this view; next/prev will use start or end of this list
+      currentTrackIndex = 0;
+    }
+  }
+
+  // Recreate full shuffled list if shuffle is enabled (used when track is not in current view)
   if (shuffleEnabled) {
     shuffledTracks = shuffleArray(allTracksFlat);
-    // Keep current track at front if playing
     if (currentTrackId) {
       const currentTrack = shuffledTracks.find(t => t.id === currentTrackId);
       if (currentTrack) {
         const currentIdx = shuffledTracks.indexOf(currentTrack);
         shuffledTracks.splice(currentIdx, 1);
         shuffledTracks.unshift(currentTrack);
-        currentTrackIndex = 0;
+        if (currentPlaylist.length === 0 || currentPlaylist.findIndex(t => t.id === currentTrackId) < 0) {
+          currentTrackIndex = 0;
+        }
       }
     }
   }
