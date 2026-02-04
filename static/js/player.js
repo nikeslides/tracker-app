@@ -32,6 +32,9 @@ const sectionsSelectEl = document.getElementById("sections-select");
 const playlistTitleEl = document.getElementById("playlist-title");
 const playlistSubtitleEl = document.getElementById("playlist-subtitle");
 const playlistTracksEl = document.getElementById("playlist-tracks");
+const mobileMenuBtn = document.getElementById("mobile-menu-btn");
+const sidebarCloseBtn = document.getElementById("sidebar-close-btn");
+const sidebarBackdrop = document.getElementById("sidebar-backdrop");
 
 // Clear Media Session on load so Web Scrobbler (and OS media controls) don't show stale track
 if ('mediaSession' in navigator) {
@@ -1263,4 +1266,72 @@ updateRepeatDisplay();
 updateVolumeDisplay();
 
 loadTracks();
+
+// --- Mobile pullout sidebar (swipe from left edge or menu button) ---
+const MOBILE_BREAKPOINT = 768;
+const SWIPE_EDGE_PX = 50;
+const SWIPE_MIN_DELTA = 50;
+
+function isMobileSidebarView() {
+  return window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches;
+}
+
+function openMobileSidebar() {
+  if (!isMobileSidebarView()) return;
+  document.body.classList.add("mobile-sidebar-open");
+}
+
+function closeMobileSidebar() {
+  document.body.classList.remove("mobile-sidebar-open");
+}
+
+function toggleMobileSidebar() {
+  if (!isMobileSidebarView()) return;
+  document.body.classList.toggle("mobile-sidebar-open");
+}
+
+if (mobileMenuBtn) {
+  mobileMenuBtn.addEventListener("click", toggleMobileSidebar);
+}
+if (sidebarCloseBtn) {
+  sidebarCloseBtn.addEventListener("click", closeMobileSidebar);
+}
+if (sidebarBackdrop) {
+  sidebarBackdrop.addEventListener("click", closeMobileSidebar);
+}
+
+// Swipe from left edge to open
+let swipeStartX = null;
+let swipeStartY = null;
+
+document.addEventListener(
+  "touchstart",
+  (e) => {
+    if (!isMobileSidebarView() || e.touches.length !== 1) return;
+    const x = e.touches[0].clientX;
+    const y = e.touches[0].clientY;
+    if (x <= SWIPE_EDGE_PX) {
+      swipeStartX = x;
+      swipeStartY = y;
+    }
+  },
+  { passive: true }
+);
+
+document.addEventListener(
+  "touchend",
+  (e) => {
+    if (swipeStartX == null || e.changedTouches.length !== 1) return;
+    const x = e.changedTouches[0].clientX;
+    const y = e.changedTouches[0].clientY;
+    const deltaX = x - swipeStartX;
+    const deltaY = y - swipeStartY;
+    swipeStartX = null;
+    swipeStartY = null;
+    if (deltaX >= SWIPE_MIN_DELTA && Math.abs(deltaY) < 120) {
+      openMobileSidebar();
+    }
+  },
+  { passive: true }
+);
 

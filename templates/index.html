@@ -67,7 +67,9 @@
 
     <div id="tracks-container">
       <div class="library-layout">
-        <aside class="sidebar" aria-label="Sections">
+        <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+        <aside class="sidebar" id="sidebar" aria-label="Sections">
+          <button type="button" class="sidebar-close-btn" id="sidebar-close-btn" aria-label="Close menu"><i class="ti ti-x"></i></button>
           <div class="sidebar-brand">
             <div class="sidebar-brand-left">
               <div class="sidebar-app-title">Yzyfi</div>
@@ -103,8 +105,11 @@
         </aside>
         <main class="playlist" aria-label="Playlist">
           <div class="playlist-header">
-            <div id="playlist-title" class="playlist-title">Loading…</div>
-            <div id="playlist-subtitle" class="playlist-subtitle"></div>
+            <button type="button" class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Open menu"><i class="ti ti-menu-2"></i></button>
+            <div class="playlist-header-text">
+              <div id="playlist-title" class="playlist-title">Loading…</div>
+              <div id="playlist-subtitle" class="playlist-subtitle"></div>
+            </div>
           </div>
           <div id="playlist-tracks" class="tracks-list">
             <div class="loading-message">Loading tracks...</div>

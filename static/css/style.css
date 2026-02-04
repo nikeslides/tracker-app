@@ -494,6 +494,68 @@ audio {
 .playlist-header {
   padding: 16px 18px;
   border-bottom: 1px solid #282828;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.playlist-header-text {
+  min-width: 0;
+  flex: 1;
+}
+.mobile-menu-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: #b3b3b3;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+}
+.mobile-menu-btn:hover {
+  color: #fff;
+  background: #282828;
+}
+.mobile-menu-btn .ti {
+  font-size: 24px;
+}
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.sidebar-close-btn {
+  display: none;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #b3b3b3;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+  z-index: 1;
+}
+.sidebar-close-btn:hover {
+  color: #fff;
+  background: #282828;
+}
+.sidebar-close-btn .ti {
+  font-size: 22px;
 }
 .playlist-title {
   font-size: 22px;
@@ -797,9 +859,6 @@ audio {
   .search-input {
     padding: 10px 36px 10px 36px;
     font-size: 13px;
-    border-radius: 6px;
-    border-left: 1px solid #333;
-    border-right: 1px solid #333;
   }
   
   .search-icon {
@@ -838,12 +897,7 @@ audio {
   }
   
   .player-right {
-    flex: 0 0 auto;
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-    justify-content: center;
-    order: 3;
+    display: none;
   }
   
   .player-controls {
@@ -854,31 +908,31 @@ audio {
   
   /* Larger controls for mobile */
   .control-btn.small {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    min-height: 44px;
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    min-height: 34px;
   }
   
   .control-btn.small .ti {
-    font-size: 22px;
+    font-size: 20px;
   }
   
   .control-btn.play-pause {
-    width: 56px;
-    height: 56px;
-    min-width: 56px;
-    min-height: 56px;
-    max-width: 56px;
-    max-height: 56px;
+    width: 46px;
+    height: 46px;
+    min-width: 46px;
+    min-height: 46px;
+    max-width: 46px;
+    max-height: 46px;
   }
   
   .control-btn.play-pause .btn-icon {
-    font-size: 24px;
+    font-size: 22px;
   }
   
   .control-btn.play-pause .pause-icon {
-    font-size: 22px;
+    font-size: 20px;
   }
   
   .progress-container {
@@ -902,36 +956,7 @@ audio {
   }
   
   .volume-control {
-    flex: 0 0 auto;
-    max-width: 100%;
-    width: 100%;
-    justify-content: center;
-    min-width: 0;
-    gap: 12px;
-  }
-  
-  .volume-slider {
-    max-width: 200px;
-    min-width: 120px;
-    flex: 0 1 auto;
-    height: 40px;
-  }
-
-  .volume-slider::before,
-  .volume-fill {
-    height: 8px;
-    border-radius: 4px;
-  }
-  
-  .btn-volume {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    min-height: 44px;
-  }
-  
-  .volume-icon {
-    font-size: 22px;
+    display: none;
   }
   
   .track-card {
@@ -973,48 +998,79 @@ audio {
   .library-layout {
     display: block;
   }
-  
-  .sidebar {
-    position: static;
-    width: auto;
-    max-height: none;
-    padding: 10px;
-    margin-bottom: 12px;
-    border: 1px solid #282828;
+
+  /* Mobile: menu button and pullout sidebar */
+  .mobile-menu-btn {
+    display: flex;
   }
-  
+
+  .sidebar-backdrop {
+    display: block;
+    top: 0;
+    bottom: 0;
+  }
+  body.mobile-sidebar-open .sidebar-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--sidebar-width);
+    max-width: 85vw;
+    max-height: none;
+    padding: 12px 0;
+    padding-top: 56px; /* room for close button */
+    margin: 0;
+    border: 1px solid #282828;
+    border-left: none;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 1100;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
+  }
+  body.mobile-sidebar-open .sidebar {
+    transform: translateX(0);
+  }
+
+  .sidebar-close-btn {
+    display: flex;
+  }
+
   .sections-list {
+    display: flex;
+  }
+
+  .sections-select {
     display: none;
   }
-  
-  .sections-select {
-    display: block;
-  }
-  
+
   .section-item {
-    flex: 0 0 auto;
-    width: auto;
-    justify-content: center;
-    padding: 8px 10px;
-    border-radius: 999px;
-    background: #242424;
+    padding: 10px 24px;
+    border-radius: 0;
+    width: 100%;
+    justify-content: space-between;
+    background: transparent;
   }
-  
+
   .section-item:hover {
     background: #242424;
   }
-  
+
   .section-item.active {
-    background: #fff;
-    color: #000;
+    background: #2a2a2a;
+    color: #fff;
   }
-  
+
   .section-item.active .section-name {
-    color: #000;
+    color: #fff;
   }
-  
+
   .section-item .section-count {
-    display: none;
+    display: inline;
   }
 
   .sidebar-favorites {
@@ -1053,31 +1109,31 @@ audio {
   
   /* Keep larger sizes on very small screens too */
   .control-btn.small {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    min-height: 44px;
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    min-height: 34px;
   }
   
   .control-btn.small .ti {
-    font-size: 22px;
+    font-size: 20px;
   }
   
   .control-btn.play-pause {
-    width: 56px;
-    height: 56px;
-    min-width: 56px;
-    min-height: 56px;
-    max-width: 56px;
-    max-height: 56px;
+    width: 46px;
+    height: 46px;
+    min-width: 46px;
+    min-height: 46px;
+    max-width: 46px;
+    max-height: 46px;
   }
   
   .control-btn.play-pause .btn-icon {
-    font-size: 24px;
+    font-size: 22px;
   }
   
   .control-btn.play-pause .pause-icon {
-    font-size: 22px;
+    font-size: 20px;
   }
   
   .volume-control {
