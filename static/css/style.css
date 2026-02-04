@@ -9,6 +9,8 @@ body {
   background: #121212;
   color: #fff;
   min-height: 100vh;
+}
+.player-body {
   padding: var(--page-padding);
   /* Leave room for the pinned sidebar */
   padding-left: calc(var(--sidebar-width) + var(--page-padding));
@@ -346,11 +348,38 @@ audio {
 }
 .sidebar-brand {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 12px;
   padding: 0 24px;
   flex-shrink: 0;
+}
+.sidebar-brand-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.sidebar-settings-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: #b3b3b3;
+  border-radius: 6px;
+  transition: color 0.15s, background-color 0.15s;
+  text-decoration: none;
+}
+.sidebar-settings-btn:hover {
+  color: #fff;
+  background-color: #282828;
+}
+.sidebar-settings-btn .ti {
+  font-size: 18px;
 }
 .sidebar-app-title {
   font-size: 18px;

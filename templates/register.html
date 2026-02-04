@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Login - Yzyfi</title>
+  <title>Create account - Yzyfi</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -74,31 +74,43 @@
       margin-bottom: 1rem;
       text-align: center;
     }
+    .footer-link {
+      text-align: center;
+      margin-top: 1.5rem;
+      font-size: 0.875rem;
+      color: #888;
+    }
+    .footer-link a {
+      color: #fff;
+    }
   </style>
 </head>
 <body>
   <div class="login-container">
-    <h1>Yzyfi</h1>
+    <h1>Create account</h1>
     {% if error %}
     <div class="error">{{ error }}</div>
     {% endif %}
     <form method="post">
       <div class="form-group">
+        <label for="invite_key">Invite key</label>
+        <input type="text" id="invite_key" name="invite_key" required autofocus
+               value="{{ invite_key or '' }}" placeholder="Paste your invite key">
+      </div>
+      <div class="form-group">
         <label for="username">Username</label>
-        <input type="text" id="username" name="username" required autofocus>
+        <input type="text" id="username" name="username" required
+               value="{{ username or '' }}" autocomplete="username">
       </div>
       <div class="form-group">
         <label for="password">Password</label>
-        <input type="password" id="password" name="password" required>
+        <input type="password" id="password" name="password" required autocomplete="new-password">
       </div>
-      <button type="submit">Login</button>
+      <button type="submit">Create account</button>
     </form>
-    {% if use_accounts %}
-    <p style="text-align: center; margin-top: 1.5rem; font-size: 0.875rem; color: #888;">
-      Don't have an account? <a href="{{ url_for('register') }}" style="color: #fff;">Create one</a> (invite key required).
+    <p class="footer-link">
+      Already have an account? <a href="{{ url_for('login') }}">Login</a>
     </p>
-    {% endif %}
   </div>
 </body>
 </html>
-

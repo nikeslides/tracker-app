@@ -11,7 +11,8 @@ A web-based music player and downloader.
 - **Bulk Download**: Download all available tracks at once
 - **Auto-Refresh**: Automatically syncs with the tracker spreadsheet (configurable interval)
 - **Album Art**: Extracts and displays embedded album artwork
-- **Authentication**: Optional password protection for the web interface
+- **Authentication**: Optional password protection (shared APP_USERNAME/APP_PASSWORD or SQLite accounts with invite-key registration)
+- **Last.fm**: Per-account scrobbling when using `--accounts` (connect in Settings)
 - **Docker Support**: Easy deployment with Docker/Podman
 
 ## Quick Start
@@ -75,6 +76,15 @@ python main.py --skip-download # Use existing CSV (skip download)
 python main.py --verbose       # Show detailed column statistics
 ```
 
+**player.py**
+```bash
+python player.py                    # Run server (no auth, or use APP_USERNAME/APP_PASSWORD)
+python player.py --accounts         # Use SQLite-backed accounts (invite-key registration)
+python player.py --accounts --gen-invite   # Generate an invite key and exit (requires --accounts)
+```
+
+With `--accounts`, the database is stored at `{output_path}/auth.db`. Users register at `/register` with an invite key; generate keys with `--gen-invite`.
+
 ### API Endpoints
 
 | Endpoint | Method | Description |
@@ -105,9 +115,17 @@ Environment variables override config file values:
 | `OUTPUT_PATH` | Data directory path |
 | `SHEET_LINK` | Spreadsheet URL |
 | `REFRESH_INTERVAL` | Refresh interval (seconds) |
-| `APP_USERNAME` | Web UI username (optional) |
-| `APP_PASSWORD` | Web UI password (optional) |
+| `APP_USERNAME` | Web UI username (optional; not used when running with `--accounts`) |
+| `APP_PASSWORD` | Web UI password (optional; not used when running with `--accounts`) |
 | `FLASK_SECRET_KEY` | Session secret key |
+| `LASTFM_API_KEY` | Last.fm API key (optional; for per-account scrobbling with `--accounts`) |
+| `LASTFM_API_SECRET` | Last.fm API secret (optional) |
+
+### Last.fm (optional, when using `--accounts`)
+
+1. Create an API account at [last.fm/api/account/create](https://www.last.fm/api/account/create).
+2. Set `LASTFM_API_KEY` and `LASTFM_API_SECRET` as environment variables.
+3. Users connect their Last.fm account in **Settings**; plays are sent as now-playing and scrobbles (after 50% or 4 minutes).
 
 ## Docker Deployment
 

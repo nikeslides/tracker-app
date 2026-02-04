@@ -48,6 +48,11 @@ let shuffleEnabled = localStorage.getItem('playerShuffle') === 'true';
 let repeatMode = localStorage.getItem('playerRepeat') || 'off'; // 'off', 'one', 'all'
 let shuffledTracks = [];
 
+// Last.fm: only send now-playing and scrobble once per track; flags reset when track changes in playTrack()
+let lastfmTrackStartTime = 0;
+let lastfmNowPlayingSentForTrackId = null;
+let lastfmScrobbledTrackId = null;
+
 let sections = [];
 let searchQuery = "";
 let selectedEra = localStorage.getItem("playerSelectedEra") || null;
@@ -294,6 +299,9 @@ async function playTrack(trackId) {
   }
 
   currentTrackId = trackId;
+  // Reset Last.fm flags so this track gets one now-playing and one scrobble (not on seek/pause)
+  lastfmNowPlayingSentForTrackId = null;
+  lastfmScrobbledTrackId = null;
   // Use shuffled tracks if shuffle is enabled, otherwise use normal order
   const trackList = shuffleEnabled && shuffledTracks.length > 0 ? shuffledTracks : allTracksFlat;
   currentTrackIndex = trackList.findIndex(t => t.id === trackId);
@@ -479,6 +487,17 @@ audioPlayer.addEventListener("timeupdate", () => {
   if (currentTrackId && !audioPlayer.paused) {
     localStorage.setItem('playerPosition', audioPlayer.currentTime.toString());
   }
+  // Last.fm scrobble when track >= 30s and (played 50% or 4 min), once per play
+  const dur = audioPlayer.duration || 0;
+  const cur = audioPlayer.currentTime || 0;
+  if (currentTrackId && dur >= 30 && (cur >= dur / 2 || cur >= 240) && lastfmScrobbledTrackId !== currentTrackId) {
+    lastfmScrobbledTrackId = currentTrackId;
+    fetch("/api/lastfm/scrobble", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ track_id: currentTrackId, timestamp: lastfmTrackStartTime }),
+    }).catch(() => {});
+  }
 });
 audioPlayer.addEventListener("loadedmetadata", () => {
   updateProgress();
@@ -491,6 +510,16 @@ audioPlayer.addEventListener("play", () => {
   // Update Media Session playback state
   if ('mediaSession' in navigator) {
     navigator.mediaSession.playbackState = 'playing';
+  }
+  // Last.fm: send now-playing and record start time only once per track (not on seek/resume)
+  if (currentTrackId && lastfmNowPlayingSentForTrackId !== currentTrackId) {
+    lastfmNowPlayingSentForTrackId = currentTrackId;
+    lastfmTrackStartTime = Math.floor(Date.now() / 1000);
+    fetch("/api/lastfm/now-playing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ track_id: currentTrackId }),
+    }).catch(() => {});
   }
 });
 audioPlayer.addEventListener("pause", () => {

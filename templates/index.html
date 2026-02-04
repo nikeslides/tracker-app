@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body>
+<body class="player-body">
   <div class="container">
     <div class="fixed-player" id="fixed-player">
       <div class="player-left">
@@ -69,8 +69,15 @@
       <div class="library-layout">
         <aside class="sidebar" aria-label="Sections">
           <div class="sidebar-brand">
-            <div class="sidebar-app-title">Yzyfi</div>
-            <div class="stats sidebar-stats" id="stats">Loading tracks...</div>
+            <div class="sidebar-brand-left">
+              <div class="sidebar-app-title">Yzyfi</div>
+              <div class="stats sidebar-stats" id="stats">Loading tracks...</div>
+            </div>
+            {% if use_accounts %}
+            <a href="{{ url_for('settings') }}" class="sidebar-settings-btn" title="Settings" aria-label="Settings">
+              <i class="ti ti-user"></i>
+            </a>
+            {% endif %}
           </div>
           <div class="search-container sidebar-search">
             <input type="text" id="search-input" class="search-input" placeholder="Search tracks, artists, era..." autocomplete="off">

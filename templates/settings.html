@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Settings - Yzyfi</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    .settings-page {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+    .settings-page h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin: 0 0 1.5rem;
+      letter-spacing: -0.02em;
+    }
+    .settings-section {
+      background: #181818;
+      border: 1px solid #282828;
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .settings-section h2 {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #888;
+      margin: 0 0 0.75rem;
+    }
+    .settings-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.5rem 0;
+    }
+    .settings-row:not(:last-child) {
+      border-bottom: 1px solid #282828;
+    }
+    .settings-label {
+      color: #b3b3b3;
+      font-size: 0.875rem;
+    }
+    .settings-value {
+      color: #fff;
+      font-size: 0.875rem;
+    }
+    .settings-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: #b3b3b3;
+      font-size: 0.875rem;
+      text-decoration: none;
+      margin-bottom: 1.5rem;
+      transition: color 0.15s;
+    }
+    .settings-back:hover {
+      color: #fff;
+    }
+    .btn-logout {
+      display: inline-block;
+      padding: 0.5rem 1rem;
+      background: transparent;
+      border: 1px solid #404040;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 0.875rem;
+      text-decoration: none;
+      transition: background-color 0.15s, border-color 0.15s;
+    }
+    .btn-logout:hover {
+      background: #282828;
+      border-color: #505050;
+    }
+  </style>
+</head>
+<body>
+  <div class="settings-page">
+    <a href="{{ url_for('index') }}" class="settings-back" aria-label="Back to player">
+      <i class="ti ti-arrow-left"></i> Back to player
+    </a>
+    <h1>Settings</h1>
+
+    <section class="settings-section" aria-labelledby="account-heading">
+      <h2 id="account-heading">Account</h2>
+      <div class="settings-row">
+        <span class="settings-label">Username</span>
+        <span class="settings-value">{{ current_username or '—' }}</span>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">Log out</span>
+        <a href="{{ url_for('logout') }}" class="btn-logout">Log out</a>
+      </div>
+    </section>
+
+    {% if lastfm_available %}
+    <section class="settings-section" aria-labelledby="lastfm-heading">
+      <h2 id="lastfm-heading">Last.fm</h2>
+      <div class="settings-row">
+        <span class="settings-label">Scrobbling</span>
+        <span class="settings-value">
+          {% if lastfm_connected %}
+            Connected as {{ lastfm_username or 'Last.fm' }}
+          {% else %}
+            Not connected
+          {% endif %}
+        </span>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">Actions</span>
+        <span class="settings-value">
+          {% if lastfm_connected %}
+            <form action="{{ url_for('lastfm_disconnect') }}" method="post" style="display:inline;">
+              <button type="submit" class="btn-logout">Disconnect</button>
+            </form>
+          {% else %}
+            <a href="{{ url_for('lastfm_connect') }}" class="btn-logout">Connect Last.fm</a>
+          {% endif %}
+        </span>
+      </div>
+    </section>
+    {% endif %}
+  </div>
+</body>
+</html>

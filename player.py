@@ -3,13 +3,18 @@
 Music player server for the Tracker sheet data.
 Serves a web interface to play tracks from pillows.su, files.yetracker.org, and pixeldrain.com links.
 Pillows files live in audio/; yetracker in audio_yetracker/; pixeldrain in audio_pixeldrain/ (separate folders).
+
+Auth: set APP_USERNAME and APP_PASSWORD to require single shared login, or run with --accounts
+to use SQLite-backed accounts (invite-key registration).
 """
 
+import argparse
 import hashlib
 import json
 import os
 import re
 import ssl
+import sys
 import threading
 import time
 import urllib.request
@@ -19,10 +24,24 @@ from io import BytesIO
 from pathlib import Path
 from typing import Dict, List, Optional
 from flask import Flask, jsonify, render_template, send_file, Response, request, session, redirect, url_for
-from werkzeug.serving import WSGIRequestHandler
+import waitress
 
 import config
 import main as sheet_processor
+
+# Account system (set by main() when --accounts is used)
+USE_ACCOUNTS = False
+ACCOUNTS_DB_PATH: Optional[Path] = None
+
+try:
+    import auth_db
+except ImportError:
+    auth_db = None
+
+try:
+    import lastfm
+except ImportError:
+    lastfm = None
 
 try:
     from mutagen import File as MutagenFile
@@ -37,6 +56,13 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY") or "super-secret-ye-key"
 
 
 def is_authenticated():
+    if USE_ACCOUNTS and ACCOUNTS_DB_PATH and auth_db:
+        user_id = session.get("user_id")
+        if not user_id:
+            return False
+        user = auth_db.get_user_by_id(ACCOUNTS_DB_PATH, user_id)
+        return user is not None
+
     app_username = os.environ.get("APP_USERNAME")
     app_password = os.environ.get("APP_PASSWORD")
 
@@ -492,30 +518,204 @@ def login():
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
-        
+
+        if USE_ACCOUNTS and ACCOUNTS_DB_PATH and auth_db:
+            user = auth_db.get_user_by_username(ACCOUNTS_DB_PATH, username or "")
+            if user and auth_db.verify_password(user, password or ""):
+                session["user_id"] = user["id"]
+                session["authenticated"] = True
+                return redirect(request.args.get("next") or url_for("index"))
+            return render_template("login.html", error="Invalid credentials", use_accounts=True)
+
         app_username = os.environ.get("APP_USERNAME")
         app_password = os.environ.get("APP_PASSWORD")
-        
         if username == app_username and password == app_password:
             session["authenticated"] = True
             return redirect(request.args.get("next") or url_for("index"))
-        
         return render_template("login.html", error="Invalid credentials")
-    
-    return render_template("login.html")
+
+    return render_template("login.html", use_accounts=USE_ACCOUNTS)
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if not USE_ACCOUNTS or not ACCOUNTS_DB_PATH or not auth_db:
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        invite_key = request.form.get("invite_key", "").strip()
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+
+        if not invite_key:
+            return render_template("register.html", error="Invite key is required", invite_key=invite_key, username=username)
+        if not username:
+            return render_template("register.html", error="Username is required", invite_key=invite_key, username=username)
+        if not password:
+            return render_template("register.html", error="Password is required", invite_key=invite_key, username=username)
+        if not auth_db.validate_invite_key(ACCOUNTS_DB_PATH, invite_key):
+            return render_template("register.html", error="Invalid or already used invite key", invite_key=invite_key, username=username)
+
+        user = auth_db.create_user(ACCOUNTS_DB_PATH, username, password)
+        if not user:
+            return render_template("register.html", error="Username already taken", invite_key=invite_key, username=username)
+
+        if not auth_db.use_invite_key(ACCOUNTS_DB_PATH, invite_key, user["id"]):
+            return render_template("register.html", error="Invite key was invalid or already used", invite_key=invite_key, username=username)
+
+        session["user_id"] = user["id"]
+        session["authenticated"] = True
+        return redirect(request.args.get("next") or url_for("index"))
+
+    return render_template("register.html")
 
 
 @app.route("/logout")
 def logout():
     session.pop("authenticated", None)
+    session.pop("user_id", None)
     return redirect(url_for("login"))
+
+
+def _index_context():
+    """Context passed to index and settings when using accounts."""
+    if USE_ACCOUNTS and ACCOUNTS_DB_PATH and auth_db:
+        user_id = session.get("user_id")
+        user = auth_db.get_user_by_id(ACCOUNTS_DB_PATH, user_id) if user_id else None
+        lastfm_connected = False
+        lastfm_username = None
+        if user_id and hasattr(auth_db, "get_lastfm_session"):
+            lfm = auth_db.get_lastfm_session(ACCOUNTS_DB_PATH, user_id)
+            if lfm:
+                lastfm_connected = True
+                lastfm_username = lfm["lastfm_username"] or None
+        return {
+            "use_accounts": True,
+            "current_username": user["username"] if user else None,
+            "lastfm_connected": lastfm_connected,
+            "lastfm_username": lastfm_username,
+            "lastfm_available": lastfm.is_configured() if lastfm else False,
+        }
+    return {"use_accounts": False, "current_username": None, "lastfm_connected": False, "lastfm_username": None, "lastfm_available": False}
 
 
 @app.route("/")
 @login_required
 def index():
     """Serve the player interface."""
-    return render_template("index.html")
+    return render_template("index.html", **_index_context())
+
+
+@app.route("/settings")
+@login_required
+def settings():
+    """Account settings (when using --accounts)."""
+    ctx = _index_context()
+    if not ctx["use_accounts"]:
+        return redirect(url_for("index"))
+    return render_template("settings.html", **ctx)
+
+
+@app.route("/settings/lastfm/connect")
+@login_required
+def lastfm_connect():
+    """Start Last.fm connect flow: redirect to Last.fm to authorize; they redirect back to cb with ?token=."""
+    if not USE_ACCOUNTS or not ACCOUNTS_DB_PATH or not auth_db or not lastfm or not lastfm.is_configured():
+        return redirect(url_for("settings"))
+    callback_url = url_for("lastfm_callback", _external=True)
+    url = f"{lastfm.AUTH_URL}?api_key={urllib.parse.quote(lastfm.API_KEY)}&cb={urllib.parse.quote(callback_url)}"
+    return redirect(url)
+
+
+@app.route("/settings/lastfm/callback")
+@login_required
+def lastfm_callback():
+    """Last.fm callback: exchange token for session, save to user, redirect to settings."""
+    if not USE_ACCOUNTS or not ACCOUNTS_DB_PATH or not auth_db:
+        return redirect(url_for("settings"))
+    token = request.args.get("token")
+    if not token:
+        return redirect(url_for("settings"))
+    result = lastfm.get_session(token) if lastfm else None
+    if not result:
+        return redirect(url_for("settings"))
+    session_key, lastfm_username = result
+    user_id = session.get("user_id")
+    if not user_id:
+        return redirect(url_for("settings"))
+    auth_db.set_lastfm_session(ACCOUNTS_DB_PATH, user_id, session_key, lastfm_username)
+    return redirect(url_for("settings"))
+
+
+@app.route("/settings/lastfm/disconnect", methods=["POST"])
+@login_required
+def lastfm_disconnect():
+    """Remove Last.fm link for current user."""
+    if not USE_ACCOUNTS or not ACCOUNTS_DB_PATH or not auth_db:
+        return redirect(url_for("settings"))
+    user_id = session.get("user_id")
+    if user_id:
+        auth_db.clear_lastfm_session(ACCOUNTS_DB_PATH, user_id)
+    return redirect(url_for("settings"))
+
+
+@app.route("/api/lastfm/now-playing", methods=["POST"])
+@login_required
+def api_lastfm_now_playing():
+    """Set Last.fm now playing for current user. Body: JSON { "track_id": "..." }."""
+    if not USE_ACCOUNTS or not ACCOUNTS_DB_PATH or not auth_db:
+        return jsonify({"error": "Accounts not enabled"}), 400
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Not logged in"}), 401
+    lfm = auth_db.get_lastfm_session(ACCOUNTS_DB_PATH, user_id) if hasattr(auth_db, "get_lastfm_session") else None
+    if not lfm:
+        return jsonify({"error": "Last.fm not connected"}), 400
+    data = request.get_json(silent=True) or {}
+    track_id = (data.get("track_id") or "").strip()
+    if not track_id:
+        return jsonify({"error": "track_id required"}), 400
+    track = get_track_index().get(track_id)
+    if not track:
+        return jsonify({"error": "Track not found"}), 404
+    if not lastfm:
+        return jsonify({"ok": False})
+    artist, title, album, duration_sec = lastfm.track_to_scrobble_meta(track)
+    ok = lastfm.update_now_playing(lfm["session_key"], artist, title, album, duration_sec)
+    return jsonify({"ok": ok})
+
+
+@app.route("/api/lastfm/scrobble", methods=["POST"])
+@login_required
+def api_lastfm_scrobble():
+    """Scrobble one play to Last.fm. Body: JSON { "track_id": "...", "timestamp": <unix_utc> }."""
+    if not USE_ACCOUNTS or not ACCOUNTS_DB_PATH or not auth_db:
+        return jsonify({"error": "Accounts not enabled"}), 400
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Not logged in"}), 401
+    lfm = auth_db.get_lastfm_session(ACCOUNTS_DB_PATH, user_id) if hasattr(auth_db, "get_lastfm_session") else None
+    if not lfm:
+        return jsonify({"error": "Last.fm not connected"}), 400
+    data = request.get_json(silent=True) or {}
+    track_id = (data.get("track_id") or "").strip()
+    timestamp = data.get("timestamp")
+    if not track_id:
+        return jsonify({"error": "track_id required"}), 400
+    if timestamp is None:
+        return jsonify({"error": "timestamp required"}), 400
+    try:
+        timestamp = int(timestamp)
+    except (TypeError, ValueError):
+        return jsonify({"error": "timestamp must be integer"}), 400
+    track = get_track_index().get(track_id)
+    if not track:
+        return jsonify({"error": "Track not found"}), 404
+    if not lastfm:
+        return jsonify({"ok": False})
+    artist, title, album, duration_sec = lastfm.track_to_scrobble_meta(track)
+    ok = lastfm.scrobble(lfm["session_key"], artist, title, timestamp, album, duration_sec)
+    return jsonify({"ok": ok})
 
 
 @app.route("/api/tracks")
@@ -664,7 +864,44 @@ def api_artwork(track_id: str):
 
 
 def main():
-    """Run the server."""
+    """Run the server or generate an invite key."""
+    global USE_ACCOUNTS, ACCOUNTS_DB_PATH
+
+    parser = argparse.ArgumentParser(description="Yzyfi player server")
+    parser.add_argument(
+        "--accounts",
+        action="store_true",
+        help="Use SQLite-backed accounts (invite-key registration) instead of APP_USERNAME/APP_PASSWORD",
+    )
+    parser.add_argument(
+        "--gen-invite",
+        action="store_true",
+        help="Generate a new invite key (requires --accounts). Print key and exit.",
+    )
+    args = parser.parse_args()
+
+    if args.gen_invite:
+        if not args.accounts:
+            print("--gen-invite requires --accounts", file=sys.stderr)
+            sys.exit(1)
+        if not auth_db:
+            print("auth_db module not available", file=sys.stderr)
+            sys.exit(1)
+        db_path = Path(config.output_path()) / "auth.db"
+        auth_db.init_db(db_path)
+        key = auth_db.create_invite_key(db_path)
+        print(f"Invite key (use once for registration): {key}")
+        sys.exit(0)
+
+    if args.accounts:
+        if not auth_db:
+            print("Account system requested but auth_db module not available.", file=sys.stderr)
+            sys.exit(1)
+        USE_ACCOUNTS = True
+        ACCOUNTS_DB_PATH = Path(config.output_path()) / "auth.db"
+        auth_db.init_db(ACCOUNTS_DB_PATH)
+        print(f"Account system enabled (SQLite: {ACCOUNTS_DB_PATH})")
+
     print("Loading tracks...")
     try:
         tracks = load_tracks()
@@ -683,9 +920,8 @@ def main():
     print(f"Starting server on http://localhost:5000")
     print("Press Ctrl+C to stop")
     
-    # Use threaded server for better performance
-    WSGIRequestHandler.protocol_version = "HTTP/1.1"
-    app.run(host="0.0.0.0", port=5000, threaded=True, debug=False)
+    # Production WSGI server (no dev-server warning)
+    waitress.serve(app, host="0.0.0.0", port=5000, threads=6)
 
 
 if __name__ == "__main__":
