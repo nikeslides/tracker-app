@@ -740,7 +740,7 @@ audio {
 
 /* Mobile Responsive Styles */
 @media (max-width: 768px) {
-  body {
+  .player-body {
     padding: 10px;
     padding-bottom: 180px; /* More space for taller stacked mobile player */
   }
@@ -973,7 +973,7 @@ audio {
     min-height: 140px;
   }
   
-  body {
+  .player-body {
     padding-bottom: 200px; /* Extra space for very small screens */
   }
   
